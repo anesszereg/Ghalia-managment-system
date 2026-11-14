@@ -3,18 +3,19 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "predev": "prisma generate",
+    "predev": "tsx prisma/prepare-client.ts",
     "dev": "next dev",
     "pretest:caisse": "prisma generate",
-    "build": "prisma generate && next build",
-    "build:netlify": "tsx prisma/deploy.ts",
+    "build": "tsx prisma/prepare-client.ts --production && next build",
+    "build:hosted": "tsx prisma/deploy.ts",
+    "build:netlify": "npm run build:hosted",
     "db:postgres:prepare": "tsx prisma/prepare-postgres.ts",
     "test:postgres": "tsx prisma/postgres.test.ts",
     "start": "next start",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "test:caisse": "tsx prisma/caisse.test.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "tsx prisma/prepare-client.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 
 function deploy() {
-  if (process.env.NETLIFY === "true" && process.env.CONTEXT !== "production") throw new Error("Only production builds may initialize the hosted database.");
+  if ((process.env.NETLIFY === "true" && process.env.CONTEXT !== "production") || (process.env.VERCEL === "1" && process.env.VERCEL_ENV !== "production")) throw new Error("Only production builds may initialize the hosted database.");
   for (const key of ["DATABASE_URL", "DIRECT_URL"]) {
     if (!/^postgres(?:ql)?:/.test(process.env[key] || "")) throw new Error(`Set ${key} to the hosted PostgreSQL connection before deploying.`);
   }
