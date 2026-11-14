@@ -1,0 +1,243 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         String   @default("admin") // admin | staff
+  createdAt    DateTime @default(now())
+}
+
+model Setting {
+  id               Int     @id @default(1)
+  showroomName     String  @default("My Bathroom Showroom")
+  logoUrl          String  @default("")
+  address          String  @default("")
+  phone            String  @default("")
+  currency         String  @default("DZD")
+  receiptFooter    String  @default("Thank you for your business!")
+  salePrefix       String  @default("SAL-")
+  purchasePrefix   String  @default("PUR-")
+  paymentPrefix    String  @default("PAY-")
+  expensePrefix    String  @default("EXP-")
+  taxRate          Float   @default(0)
+  lowStockDefault  Int     @default(3)
+}
+
+model Customer {
+  id        Int      @id @default(autoincrement())
+  name      String
+  phone     String   @default("")
+  address   String   @default("")
+  email     String   @default("")
+  notes     String   @default("")
+  createdAt DateTime @default(now())
+  sales     Sale[]
+  payments  Payment[]
+}
+
+model Supplier {
+  id        Int        @id @default(autoincrement())
+  name      String
+  phone     String     @default("")
+  address   String     @default("")
+  email     String     @default("")
+  notes     String     @default("")
+  createdAt DateTime   @default(now())
+  products  Product[]
+  purchases Purchase[]
+  payments  Payment[]
+}
+
+model Product {
+  id             Int              @id @default(autoincrement())
+  sku            String           @unique
+  name           String
+  imageUrl       String           @default("")
+  category       String           @default("Other products")
+  description    String           @default("")
+  purchasePrice  Float            @default(0)
+  sellingPrice   Float            @default(0)
+  stock          Int              @default(0)
+  minStock       Int              @default(3)
+  dimensions     String           @default("")
+  supplierId     Int?
+  supplier       Supplier?        @relation(fields: [supplierId], references: [id])
+  createdAt      DateTime         @default(now())
+  saleItems      SaleItem[]
+  purchaseItems  PurchaseItem[]
+  movements      StockMovement[]
+}
+
+model Sale {
+  id             Int        @id @default(autoincrement())
+  ref            String     @unique
+  customerId     Int?
+  customer       Customer?  @relation(fields: [customerId], references: [id])
+  customerName   String     @default("")
+  customerPhone  String     @default("")
+  date           DateTime   @default(now())
+  discount       Float      @default(0)
+  total          Float      @default(0)
+  paid           Float      @default(0)
+  paymentMethod  String     @default("cash")
+  dueDate        DateTime?
+  notes          String     @default("")
+  status         String     @default("confirmed") // confirmed | cancelled
+  createdAt      DateTime   @default(now())
+  items          SaleItem[]
+  payments       Payment[]
+}
+
+model SaleItem {
+  id         Int     @id @default(autoincrement())
+  saleId     Int
+  sale       Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId  Int?
+  product    Product? @relation(fields: [productId], references: [id])
+  name       String
+  qty        Int
+  unitPrice  Float
+  costPrice  Float   @default(0)
+  total      Float
+}
+
+model Purchase {
+  id             Int            @id @default(autoincrement())
+  ref            String         @unique
+  supplierId     Int?
+  supplier       Supplier?      @relation(fields: [supplierId], references: [id])
+  supplierName   String         @default("")
+  date           DateTime       @default(now())
+  total          Float          @default(0)
+  paid           Float          @default(0)
+  paymentMethod  String         @default("cash")
+  dueDate        DateTime?
+  notes          String         @default("")
+  status         String         @default("confirmed")
+  createdAt      DateTime       @default(now())
+  items          PurchaseItem[]
+  payments       Payment[]
+}
+
+model PurchaseItem {
+  id         Int       @id @default(autoincrement())
+  purchaseId Int
+  purchase   Purchase  @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  productId  Int?
+  product    Product?  @relation(fields: [productId], references: [id])
+  name       String
+  qty        Int
+  unitPrice  Float
+  total      Float
+}
+
+model Payment {
+  id            Int       @id @default(autoincrement())
+  ref           String    @unique
+  type          String    // SALE (received from customer) | PURCHASE (paid to supplier)
+  saleId        Int?
+  sale          Sale?     @relation(fields: [saleId], references: [id])
+  purchaseId    Int?
+  purchase      Purchase? @relation(fields: [purchaseId], references: [id])
+  customerId    Int?
+  customer      Customer? @relation(fields: [customerId], references: [id])
+  supplierId    Int?
+  supplier      Supplier? @relation(fields: [supplierId], references: [id])
+  amount        Float
+  method        String    @default("cash")
+  date          DateTime  @default(now())
+  notes         String    @default("")
+  voided        Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  cashMovements CashMovement[]
+}
+
+model Expense {
+  id        Int      @id @default(autoincrement())
+  ref       String   @unique
+  category  String
+  amount    Float
+  method    String   @default("cash")
+  date      DateTime @default(now())
+  notes     String   @default("")
+  createdAt DateTime @default(now())
+  cashMovements CashMovement[]
+}
+
+model Cashbook {
+  id Int @id @default(1)
+  initializedAt DateTime @default(now())
+  baselineCents Int @default(0)
+  provisional Boolean @default(true)
+}
+
+model CashSession {
+  id Int @id @default(autoincrement())
+  openKey Int? @unique
+  openedAt DateTime @default(now())
+  closedAt DateTime?
+  openedBy Int
+  closedBy Int?
+  openingCents Int
+  expectedCents Int?
+  countedCents Int?
+  differenceCents Int?
+  notes String @default("")
+  movements CashMovement[]
+}
+
+model CashMovement {
+  id Int @id @default(autoincrement())
+  sourceKey String @unique
+  amountCents Int
+  kind String
+  reference String
+  notes String @default("")
+  date DateTime @default(now())
+  recordedAt DateTime @default(now())
+  historical Boolean @default(false)
+  userId Int?
+  sessionId Int?
+  session CashSession? @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  paymentId Int?
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  expenseId Int?
+  expense Expense? @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+  reversalOfId Int? @unique
+  reversalOf CashMovement? @relation("CashReversal", fields: [reversalOfId], references: [id], onDelete: Restrict)
+  reversal CashMovement? @relation("CashReversal")
+
+  @@index([date, id])
+  @@index([sessionId])
+}
+
+model StockMovement {
+  id          Int      @id @default(autoincrement())
+  productId   Int
+  product     Product  @relation(fields: [productId], references: [id])
+  type        String   // SALE | PURCHASE | ADJUST | SALE_CANCEL | PURCHASE_CANCEL
+  qty         Int      // signed
+  ref         String   @default("")
+  reason      String   @default("")
+  date        DateTime @default(now())
+  balanceAfter Int     @default(0)
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  action    String
+  entity    String
+  entityId  Int      @default(0)
+  detail    String   @default("")
+  userId    Int?
+  date      DateTime @default(now())
+}

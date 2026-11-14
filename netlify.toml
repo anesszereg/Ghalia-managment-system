@@ -1,0 +1,18 @@
+[build]
+  command = "npm run build:netlify"
+  publish = ".next"
+  ignore = 'test "$CONTEXT" != "production"'
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[functions]
+  node_bundler = "esbuild"
+  external_node_modules = ["@prisma/client"]
+  included_files = ["node_modules/.prisma/client/**"]
+
+[context.deploy-preview]
+  command = "echo 'Production database access is disabled for deploy previews'; exit 1"
+
+[context.branch-deploy]
+  command = "echo 'Production database access is disabled for branch previews'; exit 1"

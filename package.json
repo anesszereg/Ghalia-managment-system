@@ -1,0 +1,51 @@
+{
+  "name": "showroom-app",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "predev": "prisma generate",
+    "dev": "next dev",
+    "pretest:caisse": "prisma generate",
+    "build": "prisma generate && next build",
+    "build:netlify": "tsx prisma/deploy.ts",
+    "db:postgres:prepare": "tsx prisma/prepare-postgres.ts",
+    "test:postgres": "tsx prisma/postgres.test.ts",
+    "start": "next start",
+    "db:push": "prisma db push",
+    "db:seed": "tsx prisma/seed.ts",
+    "test:caisse": "tsx prisma/caisse.test.ts",
+    "postinstall": "prisma generate"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.0",
+    "bcryptjs": "^3.0.3",
+    "date-fns": "^4.4.0",
+    "next": "15.5.29",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "recharts": "^3.10.1"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "8.5.32"
+    },
+    "@prisma/config": {
+      "deepmerge-ts": "8.0.2"
+    }
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.5",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "postcss": "8.5.32",
+    "prisma": "6.19.3",
+    "tailwindcss": "^4.3.5",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  }
+}
