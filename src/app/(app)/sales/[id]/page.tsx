@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { fmt, fmtDate, fmtDateTime, getSettings, payStatus } from "@/lib/utils";
-import { cancelSaleAction } from "@/lib/actions";
+import { cancelSaleAction, deleteSaleAction } from "@/lib/actions";
 import AddPaymentForm from "@/components/AddPaymentForm";
 import SubmitButton from "@/components/SubmitButton";
 import { getSessionUser } from "@/lib/auth";
@@ -33,9 +33,11 @@ export default async function SaleDetail({
   if (!sale) notFound();
   const balance = sale.total - sale.paid;
   const cancelled = sale.status === "cancelled";
+  const deleted = sale.status === "deleted";
+  const user = await getSessionUser();
   const notification = sale.emailNotification;
   const emailReady = saleEmailConfigured();
-  const canRetryEmail = notification?.status === "FAILED" && emailReady && (await getSessionUser())?.role === "admin";
+  const canRetryEmail = notification?.status === "FAILED" && emailReady && user?.role === "admin";
   const emailLabels: Record<string, string> = { PENDING: emailReady ? "Email queued" : "Email awaiting setup", SENDING: "Email sending", SENT: "Email sent", FAILED: "Email retry queued", REVIEW: "Email requires attention in Resend", SKIPPED: "Email skipped: sale cancelled" };
 
   return (
@@ -48,12 +50,21 @@ export default async function SaleDetail({
         <div className="flex gap-2 flex-wrap">
           <Link href={`/print/sale/${sale.id}`} target="_blank" className="btn-ghost">🖨 Print invoice</Link>
           <Link href={`/print/sale/${sale.id}?paper=80mm`} target="_blank" className="btn-ghost">🧾 Thermal 80mm</Link>
-          {!cancelled && (
-            <form action={cancelSaleAction}>
-              <input type="hidden" name="id" value={sale.id} />
-              {sale.paid > 0 && <label className="block text-xs mb-2"><input type="checkbox" name="cashConfirmed" value="yes" required /> Cash has been returned to the customer (or the original entry was incorrect).</label>}
-              <button className="btn-danger">Cancel sale</button>
-            </form>
+          {!cancelled && !deleted && (
+            <div className="flex gap-4">
+              <form action={cancelSaleAction}>
+                <input type="hidden" name="id" value={sale.id} />
+                {sale.paid > 0 && <label className="block text-xs mb-2"><input type="checkbox" name="cashConfirmed" value="yes" required /> Cash has been returned to the customer (or the original entry was incorrect).</label>}
+                <button className="btn-danger">Cancel sale</button>
+              </form>
+              {user?.role === "admin" && (
+                <form action={deleteSaleAction}>
+                  <input type="hidden" name="id" value={sale.id} />
+                  {sale.paid > 0 && <label className="block text-xs mb-2"><input type="checkbox" name="cashConfirmed" value="yes" required /> Cash has been returned to the customer (or the original entry was incorrect).</label>}
+                  <button className="btn-danger">Delete sale</button>
+                </form>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -65,6 +76,9 @@ export default async function SaleDetail({
 
       {cancelled && (
         <div className="card p-3 text-sm bg-slate-100 text-slate-600">This sale has been cancelled. Stock and payments were reversed.</div>
+      )}
+      {deleted && (
+        <div className="card p-3 text-sm bg-slate-100 text-slate-600">This sale has been deleted. Stock and payments were reversed, and it is hidden from lists.</div>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -96,7 +110,7 @@ export default async function SaleDetail({
           <div className="flex justify-between"><span className="text-slate-500">Balance</span><b className={balance > 0 ? "text-red-600" : "text-emerald-600"}>{fmt(balance, settings.currency)}</b></div>
           <div className="flex justify-between"><span className="text-slate-500">Status</span>
             <span className={`badge ${balance > 0 ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
-              {cancelled ? "CANCELLED" : payStatus(sale.paid, sale.total)}
+              {cancelled ? "CANCELLED" : deleted ? "DELETED" : payStatus(sale.paid, sale.total)}
             </span>
           </div>
           <div className="flex justify-between"><span className="text-slate-500">Method</span><b className="capitalize">{sale.paymentMethod}</b></div>
@@ -126,7 +140,7 @@ export default async function SaleDetail({
             </tbody>
           </table>
         </div>
-        {!cancelled && <AddPaymentForm type="SALE" txnId={sale.id} remaining={balance} currency={settings.currency} />}
+        {!cancelled && !deleted && <AddPaymentForm type="SALE" txnId={sale.id} remaining={balance} currency={settings.currency} />}
       </div>
     </div>
   );

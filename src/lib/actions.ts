@@ -367,13 +367,11 @@ export async function createSaleAction(formData: FormData) {
   redirect(`/sales/${sale.id}`);
 }
 
-export async function cancelSaleAction(formData: FormData) {
-  await requireCashUser();
-  const id = parseInt(String(formData.get("id")));
+async function voidSaleTransaction(id: number, cashConfirmed: unknown, status: "cancelled" | "deleted", reason: string) {
   await prisma.$transaction(async (tx) => {
     const sale = await tx.sale.findUnique({ where: { id }, include: { items: true } });
-    if (!sale || sale.status === "cancelled") return;
-    if (sale.paid > 0 && formData.get("cashConfirmed") !== "yes") throw new Error("Confirm the cash return or correction");
+    if (!sale || sale.status !== "confirmed") return;
+    if (sale.paid > 0 && cashConfirmed !== "yes") throw new Error("Confirm the cash return or correction");
     for (const it of sale.items) {
       if (!it.productId) continue;
       const p = await tx.product.update({
@@ -386,21 +384,38 @@ export async function cancelSaleAction(formData: FormData) {
           type: "SALE_CANCEL",
           qty: it.qty,
           ref: sale.ref,
-          reason: `Cancellation of ${sale.ref}`,
+          reason: `${reason} of ${sale.ref}`,
           balanceAfter: p.stock,
         },
       });
     }
     const payments = await tx.payment.findMany({ where: { saleId: id, voided: false } });
-    for (const payment of payments) await reverseCash(tx, { paymentId: payment.id }, "Sale cancelled: cash returned to customer");
-    await tx.sale.update({ where: { id }, data: { status: "cancelled", paid: 0 } });
+    for (const payment of payments) await reverseCash(tx, { paymentId: payment.id }, `Sale ${status}: cash returned to customer`);
+    await tx.sale.update({ where: { id }, data: { status, paid: 0 } });
     await tx.payment.updateMany({ where: { saleId: id }, data: { voided: true } });
-    await audit(tx, "CANCEL", "Sale", id, sale.ref);
+    await audit(tx, status === "deleted" ? "DELETE" : "CANCEL", "Sale", id, sale.ref);
   });
+}
+
+export async function cancelSaleAction(formData: FormData) {
+  await requireCashUser();
+  const id = parseInt(String(formData.get("id")));
+  await voidSaleTransaction(id, formData.get("cashConfirmed"), "cancelled", "Cancellation");
   revalidatePath("/", "layout");
   revalidatePath("/sales");
   revalidatePath(`/sales/${id}`);
   redirect(`/sales/${id}`);
+}
+
+export async function deleteSaleAction(formData: FormData) {
+  await requireAdminUser();
+  const id = parseInt(String(formData.get("id")));
+  const sale = await prisma.sale.findUnique({ where: { id }, select: { paid: true } });
+  if (sale?.paid && sale.paid > 0) await prisma.$transaction(cashContext);
+  await voidSaleTransaction(id, formData.get("cashConfirmed"), "deleted", "Deletion");
+  revalidatePath("/", "layout");
+  revalidatePath("/sales");
+  redirect("/sales");
 }
 
 /* ------------------------------ PURCHASES ------------------------------- */

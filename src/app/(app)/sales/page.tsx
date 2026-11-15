@@ -24,6 +24,7 @@ export default async function SalesPage({
     sales = await prisma.sale.findMany({
       where: {
         AND: [
+          { status: { not: "deleted" } },
           q ? { OR: [{ ref: textContains(q) }, { customerName: textContains(q) }, { customer: { name: textContains(q) } }] } : {},
           status === "cancelled" ? { status: "cancelled" } : status === "confirmed" ? { status: "confirmed" } : {},
         ],
