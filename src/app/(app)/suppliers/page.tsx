@@ -14,7 +14,7 @@ export default async function SuppliersPage({
   const settings = await getSettings();
   const q = sp.q || "";
   const suppliers: any[] = await prisma.$queryRaw`
-    SELECT s.*,
+    SELECT s.id, s.name, s.phone, s."openingBalance",
       COALESCE((SELECT SUM(total) FROM "Purchase" p WHERE p."supplierId"=s.id AND p.status='confirmed'),0) as "totalPurchases",
       COALESCE((SELECT SUM(total-paid) FROM "Purchase" p WHERE p."supplierId"=s.id AND p.status='confirmed'),0) as balance,
       (SELECT COUNT(*) FROM "Product" pr WHERE pr."supplierId"=s.id) as "productCount"
