@@ -2,6 +2,8 @@ import { prisma } from "@/lib/db";
 import { getSettings } from "@/lib/utils";
 import TransactionForm from "@/components/TransactionForm";
 
+export const maxDuration = 60;
+
 export default async function NewSale({
   searchParams,
 }: {

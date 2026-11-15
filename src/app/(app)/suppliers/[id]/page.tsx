@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { fmt, fmtDate, getSettings, payStatus } from "@/lib/utils";
 import { saveSupplierAction, deleteSupplierAction } from "@/lib/actions";
+import AddPaymentForm from "@/components/AddPaymentForm";
+import { cents } from "@/lib/caisse";
 
 export default async function SupplierProfile({
   params,
@@ -25,8 +27,11 @@ export default async function SupplierProfile({
   if (!supplier) notFound();
 
   const totalPurchases = supplier.purchases.reduce((s, x) => s + x.total, 0);
-  const totalPaid = supplier.purchases.reduce((s, x) => s + x.paid, 0);
-  const balance = totalPurchases - totalPaid;
+  const purchasePaid = supplier.purchases.reduce((s, x) => s + x.paid, 0);
+  const openingPaid = supplier.payments.filter(p => p.supplierOpening).reduce((sum, p) => sum + cents(p.amount), 0) / 100;
+  const openingRemaining = Math.max(0, cents(supplier.openingBalance) - cents(openingPaid)) / 100;
+  const totalPaid = purchasePaid + openingPaid;
+  const balance = totalPurchases - purchasePaid + openingRemaining;
 
   return (
     <div className="space-y-4 max-w-5xl">
@@ -37,10 +42,10 @@ export default async function SupplierProfile({
         </div>
         <div className="flex gap-2">
           <Link href={`/suppliers/${supplier.id}?edit=1`} className="btn-primary">Edit</Link>
-          <form action={deleteSupplierAction}>
+          {supplier.openingBalance === 0 && <form action={deleteSupplierAction}>
             <input type="hidden" name="id" value={supplier.id} />
             <button className="btn-danger">Delete</button>
-          </form>
+          </form>}
         </div>
       </div>
 
@@ -57,6 +62,13 @@ export default async function SupplierProfile({
         <div className="card p-4"><div className="label">Total paid</div><div className="text-xl font-bold text-emerald-600">{fmt(totalPaid, settings.currency)}</div></div>
         <div className="card p-4"><div className="label">Balance owed</div><div className={`text-xl font-bold ${balance > 0 ? "text-red-600" : "text-emerald-600"}`}>{fmt(balance, settings.currency)}</div></div>
       </div>
+
+      {supplier.openingBalance > 0 && <section className="card p-5 space-y-3 border-l-4 border-amber-400">
+        <h2 className="font-semibold text-navy-950">Opening balance</h2>
+        <div className="flex flex-wrap gap-6 text-sm"><span>Original: <b>{fmt(supplier.openingBalance, settings.currency)}</b></span><span>Paid: <b className="text-emerald-700">{fmt(openingPaid, settings.currency)}</b></span><span>Remaining: <b className="text-amber-800">{fmt(openingRemaining, settings.currency)}</b></span></div>
+        <p className="text-xs text-slate-500">Existing debt, not a new purchase. Only payments affect the caisse.</p>
+      </section>}
+      {openingRemaining > 0 && <AddPaymentForm type="PURCHASE" txnId={supplier.id} remaining={openingRemaining} currency={settings.currency} supplierOpening />}
 
       <div className="card p-5">
         <h2 className="font-semibold text-navy-950 mb-3">Products supplied ({supplier.products.length})</h2>

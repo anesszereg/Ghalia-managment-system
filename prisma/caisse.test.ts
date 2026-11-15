@@ -13,6 +13,9 @@ async function main() {
   process.env.DATABASE_URL = postgres || `file:${path.join(directory, "test.db")}`;
   process.env.DIRECT_URL = process.env.DATABASE_URL;
   process.env.AUTH_SECRET = "caisse-test-only";
+  process.env.RESEND_API_KEY = "";
+  process.env.SALE_NOTIFICATION_FROM = "";
+  process.env.SALE_NOTIFICATION_TO = "";
   Object.assign(globalThis, { AsyncLocalStorage });
   if (!postgres) execFileSync(process.execPath, ["node_modules/prisma/build/index.js", "db", "push", "--skip-generate"], { env: process.env, stdio: "pipe" });
   const { prisma } = await import("../src/lib/db");
@@ -82,6 +85,10 @@ async function main() {
     const sale = await prisma.sale.findFirstOrThrow({ where: { ref: { not: "HIST" } } });
     assert.equal(sale.customerId, null);
     assert.equal(sale.customerName, "Vente comptoir");
+    const queuedEmail = await prisma.saleEmailNotification.findUniqueOrThrow({ where: { saleId: sale.id } });
+    assert.equal(JSON.parse(queuedEmail.payload).paid, 30);
+    assert.equal(queuedEmail.status, "PENDING");
+    assert.equal(await prisma.saleEmailNotification.count(), 1);
     assert.equal(await prisma.customer.count(), customerCount);
     assert.equal(await balance(), 11000);
     await action(() => actions.addPaymentAction(form({ type: "SALE", txnId: String(sale.id), amount: "100" })));
@@ -129,6 +136,11 @@ async function main() {
     const open = await prisma.cashSession.findUniqueOrThrow({ where: { openKey: 1 } });
     await prisma.cashSession.update({ where: { id: open.id }, data: { openedAt: new Date(Date.now() - 86400000) } });
     await assert.rejects(request(() => cashActions.manualCashAction(form({ kind: "OWNER_DEPOSIT", amount: "1", notes: "Late" }))), /previous day/);
+    assert.equal(JSON.parse((await prisma.saleEmailNotification.findUniqueOrThrow({ where: { saleId: sale.id } })).payload).paid, 30);
+    const emailActions = await import("../src/lib/sale-email-actions");
+    await assert.rejects(request(() => emailActions.retrySaleEmailAction(form({ saleId: String(sale.id) })), staff.id), /Administrator/);
+    const { verifySaleEmails } = await import("./sale-email.test");
+    await verifySaleEmails(sale.id);
     console.log("PASS: historical import, idempotency, cash-only validation, deposits, installments, supplier payments, expense corrections, reversals, session closing, carry-forward, stale sessions, and transactional rollback");
   } finally {
     await prisma.$disconnect();

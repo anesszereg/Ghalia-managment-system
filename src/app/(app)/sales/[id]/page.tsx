@@ -4,6 +4,12 @@ import { prisma } from "@/lib/db";
 import { fmt, fmtDate, fmtDateTime, getSettings, payStatus } from "@/lib/utils";
 import { cancelSaleAction } from "@/lib/actions";
 import AddPaymentForm from "@/components/AddPaymentForm";
+import SubmitButton from "@/components/SubmitButton";
+import { getSessionUser } from "@/lib/auth";
+import { saleEmailConfigured } from "@/lib/sale-email";
+import { retrySaleEmailAction } from "@/lib/sale-email-actions";
+
+export const maxDuration = 60;
 
 export default async function SaleDetail({
   params,
@@ -19,6 +25,7 @@ export default async function SaleDetail({
     where: { id: Number(id) },
     include: {
       customer: true,
+      emailNotification: true,
       items: { include: { product: true } },
       payments: { where: { voided: false }, orderBy: { date: "asc" } },
     },
@@ -26,6 +33,10 @@ export default async function SaleDetail({
   if (!sale) notFound();
   const balance = sale.total - sale.paid;
   const cancelled = sale.status === "cancelled";
+  const notification = sale.emailNotification;
+  const emailReady = saleEmailConfigured();
+  const canRetryEmail = notification?.status === "FAILED" && emailReady && (await getSessionUser())?.role === "admin";
+  const emailLabels: Record<string, string> = { PENDING: emailReady ? "Email queued" : "Email awaiting setup", SENDING: "Email sending", SENT: "Email sent", FAILED: "Email retry queued", REVIEW: "Email requires attention in Resend", SKIPPED: "Email skipped: sale cancelled" };
 
   return (
     <div className="space-y-4 max-w-5xl">
@@ -46,6 +57,11 @@ export default async function SaleDetail({
           )}
         </div>
       </div>
+
+      {notification && <div role="status" className={`card flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm ${notification.status === "SENT" ? "text-emerald-700" : "text-amber-800"}`}>
+        <span>{emailLabels[notification.status] || "Email queued"}</span>
+        {canRetryEmail && <form action={retrySaleEmailAction}><input type="hidden" name="saleId" value={sale.id} /><SubmitButton pendingLabel="Retrying…">Retry email</SubmitButton></form>}
+      </div>}
 
       {cancelled && (
         <div className="card p-3 text-sm bg-slate-100 text-slate-600">This sale has been cancelled. Stock and payments were reversed.</div>

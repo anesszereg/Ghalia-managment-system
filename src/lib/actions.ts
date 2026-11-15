@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
+import { deliverSaleEmail, queueSaleEmail, saleEmailConfigured } from "./sale-email";
 import { redirect } from "next/navigation";
 import bcrypt from "bcryptjs";
 import { prisma } from "./db";
@@ -234,8 +236,14 @@ export async function saveSupplierAction(formData: FormData) {
     }),
   };
   if (!data.name) redirect("/suppliers?error=1");
-  if (id) await prisma.supplier.update({ where: { id }, data });
-  else await prisma.supplier.create({ data });
+  const openingBalance = id ? 0 : Number(formData.get("openingBalance") || 0);
+  if (openingBalance < 0) throw new Error("Opening balance must be zero or positive");
+  cents(openingBalance);
+  await prisma.$transaction(async tx => {
+    const supplier = id ? await tx.supplier.update({ where: { id }, data }) : await tx.supplier.create({ data: { ...data, openingBalance } });
+    await audit(tx, id ? "UPDATE" : "CREATE", "Supplier", supplier.id, `${supplier.name}; opening balance=${supplier.openingBalance}`);
+  });
+  revalidatePath("/", "layout");
   revalidatePath("/suppliers");
   redirect("/suppliers?saved=1");
 }
@@ -243,7 +251,11 @@ export async function saveSupplierAction(formData: FormData) {
 export async function deleteSupplierAction(formData: FormData) {
   await requireSessionUser();
   const id = parseInt(String(formData.get("id")));
-  await prisma.supplier.delete({ where: { id } });
+  await prisma.$transaction(async tx => {
+    const supplier = await tx.supplier.findUniqueOrThrow({ where: { id } });
+    if (supplier.openingBalance > 0) throw new Error("Suppliers with opening-balance history cannot be deleted");
+    await tx.supplier.delete({ where: { id } });
+  });
   revalidatePath("/suppliers");
   redirect("/suppliers");
 }
@@ -340,10 +352,15 @@ export async function createSaleAction(formData: FormData) {
       await recordPaymentCash(tx, payment);
     }
     await audit(tx, "CREATE", "Sale", sale.id, `${ref} total=${total}`);
+    await queueSaleEmail(tx, sale, lineItems);
     return sale;
   }).catch(() => null);
 
   if (!sale) redirect("/sales/new?error=stock");
+  if (saleEmailConfigured()) after(async () => {
+    try { await deliverSaleEmail(sale.id); }
+    catch { console.error("Sale email delivery could not complete; notification remains queued.", { saleId: sale.id }); }
+  });
   revalidatePath("/", "layout");
   revalidatePath("/sales");
   revalidatePath("/products");
@@ -600,6 +617,27 @@ export async function addPaymentAction(formData: FormData) {
     redirect(`${result.redirect}?paid=1`);
   }
   redirect("/payments");
+}
+
+export async function paySupplierOpeningBalanceAction(formData: FormData) {
+  await requireCashUser();
+  const supplierId = Number(formData.get("txnId"));
+  const amount = Number(formData.get("amount"));
+  if (!Number.isSafeInteger(supplierId) || supplierId < 1 || amount <= 0) throw new Error("Invalid opening-balance payment");
+  const amountCents = cents(amount);
+  await prisma.$transaction(async tx => {
+    const supplier = await tx.supplier.findUniqueOrThrow({ where: { id: supplierId } });
+    const previous = await tx.payment.aggregate({ where: { supplierId, supplierOpening: true, voided: false }, _sum: { amount: true } });
+    const remaining = cents(supplier.openingBalance) - cents(previous._sum.amount || 0);
+    if (remaining <= 0) return;
+    const paid = Math.min(amountCents, remaining) / 100;
+    const ref = await nextRef(tx, "payment");
+    const payment = await tx.payment.create({ data: { ref, type: "PURCHASE", supplierId, supplierOpening: true, amount: paid, method: "cash", notes: "Supplier opening-balance payment" } });
+    await recordPaymentCash(tx, payment);
+    await audit(tx, "PAYMENT", "Supplier", supplierId, `${ref} opening balance payment=${paid}`);
+  });
+  revalidatePath("/", "layout");
+  redirect(`/suppliers/${supplierId}?paid=1`);
 }
 
 export async function voidPaymentAction(formData: FormData) {

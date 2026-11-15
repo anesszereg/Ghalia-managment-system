@@ -14,6 +14,7 @@ export async function GET() {
     suppliers: await prisma.supplier.findMany(),
     products: await prisma.product.findMany(),
     sales: await prisma.sale.findMany({ include: { items: true } }),
+    saleEmailNotifications: await prisma.saleEmailNotification.findMany(),
     purchases: await prisma.purchase.findMany({ include: { items: true } }),
     payments: await prisma.payment.findMany(),
     expenses: await prisma.expense.findMany(),

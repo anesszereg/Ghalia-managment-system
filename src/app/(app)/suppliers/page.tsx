@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { fmt, getSettings } from "@/lib/utils";
 import { saveSupplierAction } from "@/lib/actions";
 import SubmitButton from "@/components/SubmitButton";
+import { supplierOpeningDebts } from "@/lib/suppliers";
 
 export default async function SuppliersPage({
   searchParams,
@@ -20,6 +21,8 @@ export default async function SuppliersPage({
     FROM "Supplier" s
     WHERE LOWER(s.name) LIKE LOWER(${"%" + q + "%"}) OR LOWER(s.phone) LIKE LOWER(${"%" + q + "%"})
     ORDER BY s.name`;
+  const opening = new Map((await supplierOpeningDebts()).map(s => [s.supplierId, s.balance]));
+  suppliers.forEach(s => { s.balance = Number(s.balance) + (opening.get(s.id) || 0); });
 
   return (
     <div className="space-y-4">
@@ -32,6 +35,7 @@ export default async function SuppliersPage({
         <form action={saveSupplierAction} className="card max-w-3xl p-5 space-y-5">
           <h2 className="font-semibold">New supplier</h2>
           <label className="block"><span className="label">Name</span><input name="name" required className="input" /></label>
+          <label className="block"><span className="label">Opening balance owed ({settings.currency})</span><input name="openingBalance" type="number" min="0" step="0.01" defaultValue="0" required className="input" /><span className="mt-1 block text-xs text-slate-500">Amount you already owe this supplier. No cash movement is recorded.</span></label>
           <div className="flex gap-3"><SubmitButton>Save supplier</SubmitButton><Link href="/suppliers" className="btn-ghost">Cancel</Link></div>
         </form>
       )}
